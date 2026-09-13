@@ -38,7 +38,16 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_library(clumsier-linux-qt STATIC ../../platform/linux/preset_store.cpp ../../platform/linux/qt_backend.cpp)
     target_link_libraries(clumsier-linux-qt PUBLIC clumsier-core Qt6::Core)
 endif()
-if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
+if(APPLE)
+    enable_language(OBJCXX)
+    add_library(clumsier-macos-qt STATIC
+        ../../platform/macos/qt_backend.cpp ../../platform/macos/mac_control.mm
+        ../../platform/linux/preset_store.cpp)
+    target_compile_options(clumsier-macos-qt PRIVATE -fobjc-arc -fblocks)
+    target_link_libraries(clumsier-macos-qt PUBLIC clumsier-core Qt6::Core
+        "-framework Foundation" "-framework NetworkExtension" "-framework SystemExtensions")
+endif()
+if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux" OR APPLE)
     add_library(clumsier-qt-bridge STATIC app_bridge.cpp)
     qt_add_resources(clumsier-qt-bridge starter_presets
         PREFIX "/starter-presets" BASE "${CLUMSIER_ROOT}/resources/starter-presets"
@@ -48,12 +57,14 @@ if(WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(clumsier-qt-bridge PUBLIC Qt6::Quick)
     if(WIN32)
         target_link_libraries(clumsier-qt-bridge PUBLIC clumsier-windows)
-    else()
+    elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")
         target_link_libraries(clumsier-qt-bridge PUBLIC clumsier-linux-qt)
+    else()
+        target_link_libraries(clumsier-qt-bridge PUBLIC clumsier-macos-qt)
     endif()
 endif()
 
-# The QML shell uses live adapters on Windows and Linux.
+# The QML shell uses live adapters on Windows, Linux and macOS.
 qt_add_executable(clumsier-beta main.cpp window_chrome.cpp hud_stacking.cpp)
 qt_add_qml_module(clumsier-beta
     URI Clumsier.Beta
@@ -74,6 +85,15 @@ if(WIN32)
     endif()
 endif()
 set_target_properties(clumsier-beta PROPERTIES WIN32_EXECUTABLE TRUE)
+if(APPLE)
+    set_target_properties(clumsier-beta PROPERTIES
+        MACOSX_BUNDLE TRUE
+        OUTPUT_NAME Clumsier
+        MACOSX_BUNDLE_GUI_IDENTIFIER org.clumsier.preview
+        MACOSX_BUNDLE_BUNDLE_NAME Clumsier
+        MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
+        MACOSX_BUNDLE_BUNDLE_VERSION 1)
+endif()
 
 include(CTest)
 if(BUILD_TESTING)
@@ -113,4 +133,13 @@ if(BUILD_TESTING AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
     qt_add_executable(qt-store-test ../../../tests/linux/qt_store.cpp)
     target_link_libraries(qt-store-test PRIVATE clumsier-linux-qt)
     add_test(NAME qt-linux-store COMMAND qt-store-test)
+endif()
+if(BUILD_TESTING AND APPLE)
+    qt_add_executable(qt-mac-backend-test ../../../tests/macos/qt_backend.cpp)
+    target_include_directories(qt-mac-backend-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/..)
+    target_link_libraries(qt-mac-backend-test PRIVATE clumsier-macos-qt Qt6::Test)
+    add_test(NAME qt-mac-backend COMMAND qt-mac-backend-test)
+    qt_add_executable(qt-mac-store-test ../../../tests/linux/qt_store.cpp)
+    target_link_libraries(qt-mac-store-test PRIVATE clumsier-macos-qt)
+    add_test(NAME qt-mac-store COMMAND qt-mac-store-test)
 endif()
